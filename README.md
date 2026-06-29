@@ -132,6 +132,42 @@ macOS / Linux:
 bash ./tools/quick_import.sh ./imports/alipay_snapshot.json
 ```
 
+如果你想保留每天的历史记录，推荐用每日更新脚本代替上面的正式写入：
+
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\daily_update.ps1 .\imports\alipay_snapshot.json
+```
+
+macOS / Linux:
+
+```bash
+bash ./tools/daily_update.sh ./imports/alipay_snapshot.json
+```
+
+每日更新会同时生成：
+
+```text
+exports/ai_portfolio_snapshot.json
+history/YYYY-MM-DD/
+history/daily_index.jsonl
+```
+
+一个月或两个月总结：
+
+Windows PowerShell:
+
+```powershell
+python .\tools\summarize_history.py --days 30 --out .\exports\history_summary.json
+```
+
+macOS / Linux:
+
+```bash
+python3 ./tools/summarize_history.py --days 30 --out ./exports/history_summary.json
+```
+
 ## 给 AI 工具的交接话术
 
 可以把下面这段直接发给 Codex、Claude Code、AutoClaw：

@@ -5,6 +5,8 @@ imports/*
 !imports/.gitkeep
 exports/*
 !exports/.gitkeep
+history/*
+!history/.gitkeep
 work/
 *.log
 __pycache__/
