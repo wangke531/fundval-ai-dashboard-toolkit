@@ -1,0 +1,116 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: fundval-live-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${TIME_ZONE}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: fundval-live-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: jasamine/fundval-backend:v2.6.0
+    container_name: fundval-live-backend
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/app/local-entrypoint.sh"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DJANGO_SETTINGS_MODULE: fundval.local_settings
+      FUNDVAL_ADMIN_USERNAME: ${FUNDVAL_ADMIN_USERNAME}
+      FUNDVAL_ADMIN_PASSWORD: ${FUNDVAL_ADMIN_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${BACKEND_PORT}:8000"
+    volumes:
+      - ./backend-entrypoint.sh:/app/local-entrypoint.sh:ro
+      - ./config/auto_auth.py:/app/local-auto-auth.py:ro
+      - ./config/auto_auth.py:/app/fundval/auto_auth.py:ro
+      - ./config/local_estimate_patch.py:/app/fundval/local_estimate_patch.py:ro
+      - ./config/local_settings.py:/app/fundval/local_settings.py:ro
+      - ./config/config.runtime.json:/app/config/config.json
+      - media_data:/app/media
+
+  celery:
+    image: jasamine/fundval-backend:v2.6.0
+    container_name: fundval-live-celery
+    restart: unless-stopped
+    entrypoint: []
+    command: celery -A fundval worker -l info
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DJANGO_SETTINGS_MODULE: fundval.local_settings
+      FUNDVAL_ADMIN_USERNAME: ${FUNDVAL_ADMIN_USERNAME}
+      FUNDVAL_ADMIN_PASSWORD: ${FUNDVAL_ADMIN_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    volumes:
+      - ./config/auto_auth.py:/app/local-auto-auth.py:ro
+      - ./config/auto_auth.py:/app/fundval/auto_auth.py:ro
+      - ./config/local_estimate_patch.py:/app/fundval/local_estimate_patch.py:ro
+      - ./config/local_settings.py:/app/fundval/local_settings.py:ro
+      - ./config/config.runtime.json:/app/config/config.json
+      - media_data:/app/media
+
+  frontend:
+    image: jasamine/fundval-frontend:v2.6.0
+    container_name: fundval-live-frontend
+    restart: unless-stopped
+    environment:
+      FUNDVAL_ADMIN_USERNAME: ${FUNDVAL_ADMIN_USERNAME}
+      FUNDVAL_ADMIN_PASSWORD: ${FUNDVAL_ADMIN_PASSWORD}
+    depends_on:
+      - backend
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sed \
+          -e "s|__FUNDVAL_ADMIN_USERNAME__|$${FUNDVAL_ADMIN_USERNAME}|g" \
+          -e "s|__FUNDVAL_ADMIN_PASSWORD__|$${FUNDVAL_ADMIN_PASSWORD}|g" \
+          /usr/share/nginx/html/no-login.template.js > /usr/share/nginx/html/no-login.js
+        nginx -g 'daemon off;'
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT}:80"
+    volumes:
+      - ./config/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./config/index.html:/usr/share/nginx/html/index.html:ro
+      - ./config/no-login.js:/usr/share/nginx/html/no-login.template.js:ro
+      - ./config/local-source-badge.js:/usr/share/nginx/html/local-source-badge.js:ro
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_data:

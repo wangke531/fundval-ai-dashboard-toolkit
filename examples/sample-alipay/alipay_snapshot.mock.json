@@ -1,0 +1,31 @@
+{
+  "snapshot_date": "2026-06-29",
+  "account_name": "Alipay Fund",
+  "holdings": [
+    {
+      "fund_code": "110020",
+      "fund_name": "易方达沪深300ETF联接C",
+      "holding_value": "6250.40",
+      "holding_profit": "320.15",
+      "share": "4820.1240",
+      "nav": "1.2967"
+    },
+    {
+      "fund_code": "000001",
+      "fund_name": "华夏成长混合",
+      "holding_value": "8120.30",
+      "holding_profit": "980.60",
+      "share": "3005.2130",
+      "nav": "2.7021"
+    },
+    {
+      "fund_code": "005827",
+      "fund_name": "易方达蓝筹精选混合",
+      "holding_value": "4271.80",
+      "holding_profit": "-52.40",
+      "share": "1920.8876",
+      "nav": "2.2239"
+    }
+  ],
+  "warnings": []
+}

@@ -1,0 +1,113 @@
+{
+  "snapshot_file": "examples\\sample-alipay\\alipay_snapshot.mock.json",
+  "snapshot_date": "2026-06-29",
+  "account_name": "Alipay Fund",
+  "account_id": "3394ebb3-7e14-4bbd-b73d-2533336efc07",
+  "replace": true,
+  "dry_run": true,
+  "deleted_operation_ids": [],
+  "synthetic_operations": [
+    {
+      "fund_code": "110020",
+      "operation_type": "BUY",
+      "operation_date": "2026-06-29",
+      "before_15": true,
+      "amount": "5930.25",
+      "share": "4820.1240",
+      "nav": "1.2303",
+      "source_holding_value": "6250.40",
+      "source_profit": "320.15",
+      "source_fund_name": "易方达沪深300ETF联接C"
+    },
+    {
+      "fund_code": "000001",
+      "operation_type": "BUY",
+      "operation_date": "2026-06-29",
+      "before_15": true,
+      "amount": "7139.70",
+      "share": "3005.2130",
+      "nav": "2.3758",
+      "source_holding_value": "8120.30",
+      "source_profit": "980.60",
+      "source_fund_name": "华夏成长混合"
+    },
+    {
+      "fund_code": "005827",
+      "operation_type": "BUY",
+      "operation_date": "2026-06-29",
+      "before_15": true,
+      "amount": "4324.20",
+      "share": "1920.8876",
+      "nav": "2.2511",
+      "source_holding_value": "4271.80",
+      "source_profit": "-52.40",
+      "source_fund_name": "易方达蓝筹精选混合"
+    }
+  ],
+  "created_operations": [
+    {
+      "dry_run": true,
+      "account": "3394ebb3-7e14-4bbd-b73d-2533336efc07",
+      "fund_code": "110020",
+      "operation_type": "BUY",
+      "operation_date": "2026-06-29",
+      "before_15": true,
+      "amount": "5930.25",
+      "share": "4820.1240",
+      "nav": "1.2303"
+    },
+    {
+      "dry_run": true,
+      "account": "3394ebb3-7e14-4bbd-b73d-2533336efc07",
+      "fund_code": "000001",
+      "operation_type": "BUY",
+      "operation_date": "2026-06-29",
+      "before_15": true,
+      "amount": "7139.70",
+      "share": "3005.2130",
+      "nav": "2.3758"
+    },
+    {
+      "dry_run": true,
+      "account": "3394ebb3-7e14-4bbd-b73d-2533336efc07",
+      "fund_code": "005827",
+      "operation_type": "BUY",
+      "operation_date": "2026-06-29",
+      "before_15": true,
+      "amount": "4324.20",
+      "share": "1920.8876",
+      "nav": "2.2511"
+    }
+  ],
+  "raw_snapshot": {
+    "snapshot_date": "2026-06-29",
+    "account_name": "Alipay Fund",
+    "holdings": [
+      {
+        "fund_code": "110020",
+        "fund_name": "易方达沪深300ETF联接C",
+        "holding_value": "6250.40",
+        "holding_profit": "320.15",
+        "share": "4820.1240",
+        "nav": "1.2967"
+      },
+      {
+        "fund_code": "000001",
+        "fund_name": "华夏成长混合",
+        "holding_value": "8120.30",
+        "holding_profit": "980.60",
+        "share": "3005.2130",
+        "nav": "2.7021"
+      },
+      {
+        "fund_code": "005827",
+        "fund_name": "易方达蓝筹精选混合",
+        "holding_value": "4271.80",
+        "holding_profit": "-52.40",
+        "share": "1920.8876",
+        "nav": "2.2239"
+      }
+    ],
+    "warnings": []
+  }
+}
