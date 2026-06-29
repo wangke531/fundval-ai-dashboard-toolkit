@@ -162,6 +162,12 @@ bash ./tools/quick_import.sh ./imports/alipay_snapshot.json --dry-run
 examples/sample-alipay/
 ```
 
+更完整的 Claude Code / AutoClaw / Codex 操作流程见：
+
+```text
+AI_TOOL_USAGE.md
+```
+
 默认行为：
 
 - `--replace`：用本次支付宝快照替换这些基金在当前账户下已有的合成操作。

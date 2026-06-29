@@ -3,6 +3,8 @@ config/config.json
 config/config.runtime.json
 imports/*
 !imports/.gitkeep
+exports/*
+!exports/.gitkeep
 work/
 *.log
 __pycache__/
