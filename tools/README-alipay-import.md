@@ -43,6 +43,14 @@ cd D:\FundVal-Live
 powershell -ExecutionPolicy Bypass -File .\tools\quick_import.ps1 .\examples\alipay_snapshot.example.json
 ```
 
+macOS / Linux:
+
+```bash
+cd fundval-ai-dashboard-toolkit
+bash ./tools/quick_import.sh ./examples/alipay_snapshot.example.json --dry-run
+bash ./tools/quick_import.sh ./examples/alipay_snapshot.example.json
+```
+
 ## 低层脚本
 
 如果你需要自定义参数，可以直接调用：

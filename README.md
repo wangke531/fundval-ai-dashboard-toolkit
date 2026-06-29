@@ -21,10 +21,31 @@ http://localhost:21345/dashboard/positions
 
 ## 初始化
 
+前置条件：
+
+- Docker Desktop，Windows 和 macOS 都用这个。
+- Python 3，用于生成运行配置和导入支付宝截图 JSON。
+- Git，可选，只在需要从 GitHub 克隆时使用。
+
+克隆仓库：
+
+```bash
+git clone https://github.com/wangke531/fundval-ai-dashboard-toolkit.git
+cd fundval-ai-dashboard-toolkit
+```
+
 复制环境变量：
+
+Windows PowerShell:
 
 ```powershell
 copy .env.example .env
+```
+
+macOS / Linux:
+
+```bash
+cp .env.example .env
 ```
 
 编辑 `.env`，至少改掉：
@@ -37,20 +58,35 @@ FUNDVAL_BOOTSTRAP_KEY=change_this_random_bootstrap_key
 
 生成本地运行配置：
 
+Windows PowerShell:
+
 ```powershell
 python .\tools\prepare_config.py
 ```
 
+macOS / Linux:
+
+```bash
+python3 ./tools/prepare_config.py
+```
+
 启动：
 
+Windows PowerShell:
+
 ```powershell
-cd D:\FundVal-Live
+docker compose up -d
+```
+
+macOS / Linux:
+
+```bash
 docker compose up -d
 ```
 
 查看服务：
 
-```powershell
+```bash
 docker compose ps
 ```
 
@@ -70,25 +106,53 @@ imports/alipay_snapshot.json
 
 试算，不写入：
 
+Windows PowerShell:
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\quick_import.ps1 .\imports\alipay_snapshot.json -DryRun
 ```
 
+macOS / Linux:
+
+```bash
+bash ./tools/quick_import.sh ./imports/alipay_snapshot.json --dry-run
+```
+
 正式写入：
+
+Windows PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\quick_import.ps1 .\imports\alipay_snapshot.json
+```
+
+macOS / Linux:
+
+```bash
+bash ./tools/quick_import.sh ./imports/alipay_snapshot.json
 ```
 
 ## 给 AI 工具的交接话术
 
 可以把下面这段直接发给 Codex、Claude Code、AutoClaw：
 
+Windows:
+
 ```text
 请读取我发的支付宝基金持仓截图，严格按照当前项目根目录 AI_SCREENSHOT_PROMPT.md 的格式输出 JSON。
 把结果保存为 imports/alipay_snapshot.json。
 保存后先运行：
 powershell -ExecutionPolicy Bypass -File .\tools\quick_import.ps1 .\imports\alipay_snapshot.json -DryRun
+确认没有报错后，再询问我是否正式导入。
+```
+
+macOS / Linux:
+
+```text
+请读取我发的支付宝基金持仓截图，严格按照当前项目根目录 AI_SCREENSHOT_PROMPT.md 的格式输出 JSON。
+把结果保存为 imports/alipay_snapshot.json。
+保存后先运行：
+bash ./tools/quick_import.sh ./imports/alipay_snapshot.json --dry-run
 确认没有报错后，再询问我是否正式导入。
 ```
 
@@ -111,8 +175,16 @@ examples/sample-alipay/
 
 如果要检查养基宝登录状态：
 
+Windows PowerShell:
+
 ```powershell
 Invoke-RestMethod "http://localhost:21345/api/source-credentials/status/?source_name=yangjibao"
+```
+
+macOS / Linux:
+
+```bash
+curl "http://localhost:21345/api/source-credentials/status/?source_name=yangjibao"
 ```
 
 ## 重要边界

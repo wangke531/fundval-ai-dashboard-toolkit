@@ -10,6 +10,7 @@
 - `docker compose ps` 全部服务正常。
 - `python .\tools\prepare_config.py` 可以生成 `config/config.runtime.json`。
 - `powershell -ExecutionPolicy Bypass -File .\tools\quick_import.ps1 .\examples\sample-alipay\alipay_snapshot.mock.json -DryRun -Out .\examples\sample-alipay\dry_run_report.mock.json` 可以通过。
+- `bash ./tools/quick_import.sh ./examples/sample-alipay/alipay_snapshot.mock.json --dry-run --out ./examples/sample-alipay/dry_run_report.mock.json` 可以通过。
 - `README.md` 里的启动地址仍是 `http://localhost:21345/dashboard/positions`。
 - 如果要公网部署，必须先重新设计鉴权和 HTTPS；默认版本只适合本机自用。
 
