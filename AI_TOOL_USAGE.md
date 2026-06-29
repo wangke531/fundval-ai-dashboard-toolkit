@@ -1,13 +1,15 @@
 # Claude Code / AutoClaw / Codex 使用说明
 
-这份文档说明别人部署好本工具后，如何把支付宝截图交给 AI 工具，让 AI 更新看板并分析基金。
+这份文档说明别人部署好本数据框架后，如何把支付宝截图交给 AI 工具，让 AI 操作本地脚本、更新数据、读取结构化文件并分析基金。
 
 ## 角色分工
 
-- FundVal-Live：本地 Web 看板，保存持仓，计算估值。
+- FundVal-Live 数据框架：本地 Web 看板，保存持仓，计算估值，归档历史，导出结构化 JSON。
 - 支付宝截图：真实持仓金额、持有收益、份额的来源。
 - 养基宝数据源：实时估值来源，优先用于今日预估。
 - Claude Code / AutoClaw / Codex：识别截图、写入 JSON、运行导入脚本、导出结构化数据、做复盘分析。
+
+本项目本身不做总结和建议，只提供数据记录和导出能力。
 
 AI 不应该自己发明基金估值算法。AI 应该读取 FundVal-Live 导出的 JSON，再做解释和分析。
 
@@ -27,7 +29,7 @@ AI 不应该自己发明基金估值算法。AI 应该读取 FundVal-Live 导出
 把下面这段发给 Claude Code / AutoClaw / Codex：
 
 ```text
-你正在操作一个本地基金看板项目。
+你正在操作一个本地基金数据框架项目。
 
 目标：
 1. 读取我提供的支付宝基金持仓截图。
@@ -119,7 +121,7 @@ history/YYYY-MM-DD/ai_portfolio_snapshot.json
 history/daily_index.jsonl
 ```
 
-`history/daily_index.jsonl` 是长期记录入口，一个月、两个月复盘都优先读它。
+`history/daily_index.jsonl` 是长期记录入口，一个月、两个月复盘都优先读它。数据框架只负责生成这些文件，分析逻辑由 AI 工具完成。
 
 ## 推荐分析结构
 

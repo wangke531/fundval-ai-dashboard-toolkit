@@ -1,6 +1,8 @@
-# FundVal-Live AI 本地基金看板
+# FundVal-Live 基金数据框架
 
-这是一个面向单人本地使用的基金看板工具包，基于 FundVal-Live Docker 镜像，加了本地免登录、养基宝优先估值、支付宝截图快照导入和 AI 识图交接规范。
+这是一个面向单人本地使用的基金数据框架，基于 FundVal-Live Docker 镜像，加了本地免登录、养基宝优先估值、支付宝截图快照导入、每日历史归档和 AI 工具交接规范。
+
+本项目只负责记录、归档、导入和导出结构化数据。截图识别、操控流程、读取数据、总结复盘、风险提示和可选操作思路，由 Claude Code / AutoClaw / Codex 等外部 AI 工具负责。
 
 默认访问地址：
 
@@ -17,7 +19,7 @@ http://localhost:21345/dashboard/positions
 3. 把截图交给 Codex、Claude Code、AutoClaw 等 AI 工具。
 4. AI 按 `AI_SCREENSHOT_PROMPT.md` 输出统一 JSON。
 5. 运行一键导入脚本，把支付宝真实持仓金额同步到 FundVal-Live。
-6. FundVal-Live 长期保存持仓快照，养基宝接口优先提供实时估值，AI 再读取数据做复盘和操作参考。
+6. FundVal-Live 长期保存持仓快照，养基宝接口优先提供实时估值，并把结构化数据导出给 AI 工具读取。
 
 ## 初始化
 
@@ -233,4 +235,4 @@ curl "http://localhost:21345/api/source-credentials/status/?source_name=yangjiba
 
 这个工具同步的是“支付宝当前持仓快照”，不是还原真实历史买卖流水。支付宝截图通常只有当前市值、累计收益、份额等信息，所以导入脚本会合成一条建仓操作，让看板金额和支付宝对齐。
 
-AI 的职责是识别截图、生成标准 JSON、读取看板数据做复盘。基金实时估值仍由 FundVal-Live/养基宝接口完成，不靠 AI 自己发明算法。
+AI 的职责是识别截图、生成标准 JSON、调用本项目脚本、读取导出的结构化数据并做复盘。本项目本身不负责自动投资建议；基金实时估值仍由 FundVal-Live/养基宝接口完成，不靠 AI 自己发明算法。
