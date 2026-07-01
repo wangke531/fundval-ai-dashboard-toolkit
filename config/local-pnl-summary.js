@@ -268,28 +268,38 @@
     return null;
   }
 
-  function renderYesterdayPnlMetric(summary) {
+  function nativePnlMetricCandidates() {
     if (!currentPositionPage()) return;
-    const row = getYesterdayPnl(summary);
-    const labels = Array.from(document.querySelectorAll("span, div"))
+    return Array.from(document.querySelectorAll("span, div"))
       .filter((node) => {
         if (node.closest("#" + ID)) return false;
         const text = (node.textContent || "").replace(/\s+/g, "");
         return text === "今日盈亏(预估)" || text === "今日盈亏预估";
-      });
-    for (const label of labels) {
+      })
+      .map((label) => {
       let target = label.parentElement;
       let best = null;
       for (let depth = 0; target && depth < 4; depth += 1) {
         const text = (target.textContent || "").replace(/\s+/g, "");
         const rect = target.getBoundingClientRect();
-        if (text.includes("今日盈亏") && text.length < 120 && rect.width < 560 && rect.height < 220) best = target;
+          if (text.includes("今日盈亏") && text.length < 160 && rect.width < 620 && rect.height < 240) best = target;
         if (rect.width > 760 || text.length > 180) break;
         target = target.parentElement;
       }
-      if (!best || best === document.body) continue;
+        return best && best !== document.body ? best : null;
+      })
+      .filter(Boolean);
+  }
+
+  function renderYesterdayPnlMetric(summary) {
+    if (!currentPositionPage()) return;
+    window.__localPnlLastSummary = summary;
+    const row = getYesterdayPnl(summary);
+    const targets = nativePnlMetricCandidates() || [];
+    for (const best of targets) {
       best.classList.remove("local-hide-today-pnl-metric");
       best.classList.add("local-yesterday-pnl-metric");
+      best.dataset.localPnlRole = "yesterday";
       if (row) {
         best.innerHTML = `
           <div class="local-yesterday-pnl-label">昨日盈亏</div>
@@ -306,29 +316,9 @@
     }
   }
 
-  function hideNativeTodayPnlMetric() {
-    if (!currentPositionPage()) return;
-    const labels = Array.from(document.querySelectorAll("span, div"))
-      .filter((node) => {
-        if (node.closest("#" + ID)) return false;
-        const text = (node.textContent || "").replace(/\s+/g, "");
-        return text === "今日盈亏(预估)" || text === "今日盈亏预估";
-      });
-    for (const label of labels) {
-      let target = label.parentElement;
-      let best = null;
-      for (let depth = 0; target && depth < 4; depth += 1) {
-        const text = (target.textContent || "").replace(/\s+/g, "");
-        const rect = target.getBoundingClientRect();
-        if (text.includes("今日盈亏") && text.length < 80 && rect.width < 520 && rect.height < 180) {
-          best = target;
-        }
-        if (rect.width > 700 || text.length > 140) break;
-        target = target.parentElement;
-      }
-      if (best && best !== document.body) {
-        best.classList.add("local-hide-today-pnl-metric");
-      }
+  function refreshNativeYesterdayPnlMetric() {
+    if (window.__localPnlLastSummary) {
+      renderYesterdayPnlMetric(window.__localPnlLastSummary);
     }
   }
 
@@ -480,7 +470,7 @@
       pending = true;
       requestAnimationFrame(() => {
         syncDarkMode();
-        hideNativeTodayPnlMetric();
+        refreshNativeYesterdayPnlMetric();
         pending = false;
       });
     };
