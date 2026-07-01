@@ -55,6 +55,8 @@ services:
       - ./config/local_estimate_patch.py:/app/fundval/local_estimate_patch.py:ro
       - ./config/local_settings.py:/app/fundval/local_settings.py:ro
       - ./config/config.runtime.json:/app/config/config.json
+      - ./imports:/app/local-imports:ro
+      - ./history:/app/local-history
       - media_data:/app/media
 
   celery:
@@ -83,6 +85,8 @@ services:
       - ./config/local_estimate_patch.py:/app/fundval/local_estimate_patch.py:ro
       - ./config/local_settings.py:/app/fundval/local_settings.py:ro
       - ./config/config.runtime.json:/app/config/config.json
+      - ./imports:/app/local-imports:ro
+      - ./history:/app/local-history
       - media_data:/app/media
 
   frontend:
@@ -109,6 +113,7 @@ services:
       - ./config/index.html:/usr/share/nginx/html/index.html:ro
       - ./config/no-login.js:/usr/share/nginx/html/no-login.template.js:ro
       - ./config/local-source-badge.js:/usr/share/nginx/html/local-source-badge.js:ro
+      - ./config/local-pnl-summary.js:/usr/share/nginx/html/local-pnl-summary.js:ro
 
 volumes:
   postgres_data:

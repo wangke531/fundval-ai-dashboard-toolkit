@@ -7,7 +7,12 @@ available in YangJiBao, the next refresh switches it back automatically.
 """
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal, InvalidOperation
 from functools import wraps
+import json
+from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from django.db import connection
 from django.http import JsonResponse
@@ -17,6 +22,11 @@ from rest_framework.response import Response
 
 _PATCHED = False
 _TABLE_READY = False
+ACCOUNT_NAME = "Alipay Fund"
+LOCAL_TZ = ZoneInfo("Asia/Shanghai")
+US_TZ = ZoneInfo("America/New_York")
+MONEY = Decimal("0.01")
+LOCAL_PNL_SERIES = Path("/app/local-history/local_pnl_series.jsonl")
 
 LOGIN_SOURCES = {"yangjibao", "xiaobeiyangji"}
 SOURCE_LABELS = {
@@ -26,6 +36,330 @@ SOURCE_LABELS = {
     "xiaobeiyangji": "小倍养基",
     "danjuan": "蛋卷",
 }
+
+
+def _decimal(value, default="0"):
+    if value is None or value == "":
+        if default is None:
+            return None
+        value = default
+    try:
+        return Decimal(str(value).replace(",", "").replace("¥", "").strip())
+    except (InvalidOperation, ValueError, TypeError):
+        if default is None:
+            return None
+        return Decimal(default)
+
+
+def _money(value):
+    return str(_decimal(value).quantize(MONEY))
+
+
+def _ratio_percent(value):
+    dec = _decimal(value)
+    return str((dec * Decimal("100")).quantize(MONEY))
+
+
+def _previous_weekday(day):
+    current = day - timedelta(days=1)
+    while current.weekday() >= 5:
+        current -= timedelta(days=1)
+    return current
+
+
+def _date_or_none(value):
+    if isinstance(value, date):
+        return value
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def _local_now():
+    return timezone.now().astimezone(LOCAL_TZ)
+
+
+def _local_datetime(value):
+    if not value:
+        return None
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if timezone.is_naive(value):
+        value = timezone.make_aware(value, timezone.utc)
+    return value.astimezone(LOCAL_TZ)
+
+
+def _day_stage(now):
+    today = now.date()
+    minutes = now.hour * 60 + now.minute
+    if minutes < 15 * 60:
+        return {
+            "stage": "penetrating",
+            "label": "穿透中",
+            "range_label": "00:00-14:59",
+            "archive_time": "23:59",
+            "today_has_started": True,
+            "profit_date": today,
+        }
+    return {
+        "stage": "settling",
+        "label": "结算中",
+        "range_label": "15:00-23:59",
+        "archive_time": "23:59",
+        "today_has_started": True,
+        "profit_date": today,
+    }
+
+
+def _us_stage(now):
+    us_now = now.astimezone(US_TZ)
+    today = us_now.date()
+    current = us_now.time()
+    is_weekday = today.weekday() < 5
+    regular_open = time(9, 30) <= current < time(16, 0)
+    if is_weekday and regular_open:
+        label = "美股交易中"
+        stage = "trading"
+    elif is_weekday and current < time(9, 30):
+        label = "美股未开盘"
+        stage = "before_open"
+    else:
+        label = "美股休市/已收盘"
+        stage = "closed"
+    return {
+        "stage": stage,
+        "label": label,
+        "us_time": us_now.isoformat(),
+        "regular_session": bool(is_weekday and regular_open),
+    }
+
+
+def _market_clock(now):
+    day_stage = _day_stage(now)
+    us = _us_stage(now)
+    return {
+        "now": now.isoformat(),
+        "date": now.date().isoformat(),
+        "day_stage": {
+            **day_stage,
+            "profit_date": day_stage["profit_date"].isoformat(),
+        },
+        "a_share": {
+            "stage": day_stage["stage"],
+            "label": day_stage["label"],
+            "today_has_started": True,
+            "active_trade_date": day_stage["profit_date"].isoformat(),
+        },
+        "us": us,
+    }
+
+
+def _is_qdii(name, fund_type):
+    text = f"{name or ''} {fund_type or ''}".upper()
+    keywords = ["QDII", "纳斯达克", "全球", "海外", "标普", "美国", "恒生", "日经"]
+    return any(keyword.upper() in text for keyword in keywords)
+
+
+def _is_fixed_income(name, fund_type):
+    text = f"{name or ''} {fund_type or ''}"
+    return "债" in text or "货币" in text or "固收" in text
+
+
+def _fund_bucket(name, fund_type):
+    if _is_qdii(name, fund_type):
+        return "qdii"
+    if _is_fixed_income(name, fund_type):
+        return "fixed_income"
+    return "domestic"
+
+
+def _snapshot_candidates():
+    candidates = []
+    for base in (Path("/app/local-imports"), Path("imports")):
+        path = base / "alipay_snapshot.json"
+        if path.exists():
+            candidates.append(path)
+    for base in (Path("/app/local-history"), Path("history")):
+        if base.exists():
+            candidates.extend(base.glob("*/alipay_snapshot.json"))
+    return sorted(set(candidates), key=lambda path: path.stat().st_mtime, reverse=True)
+
+
+def _load_latest_alipay_snapshot():
+    for path in _snapshot_candidates():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        holdings = data.get("holdings")
+        if isinstance(holdings, list) and holdings:
+            snapshot_date = _date_or_none(data.get("snapshot_date"))
+            by_code = {
+                str(item.get("fund_code") or "").zfill(6): item
+                for item in holdings
+                if item.get("fund_code")
+            }
+            return {
+                "path": str(path),
+                "snapshot_date": snapshot_date,
+                "account_name": data.get("account_name"),
+                "holdings": holdings,
+                "by_code": by_code,
+                "holding_profit": sum(
+                    _decimal(item.get("holding_profit")) for item in holdings
+                ),
+                "holding_value": sum(
+                    _decimal(item.get("holding_value")) for item in holdings
+                ),
+            }
+    return None
+
+
+def _json_default(value):
+    if isinstance(value, Decimal):
+        return _money(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    return str(value)
+
+
+def _read_jsonl(path):
+    if not path.exists():
+        return []
+    rows = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def _write_jsonl(path, rows):
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "".join(json.dumps(row, ensure_ascii=False, sort_keys=True, default=_json_default) + "\n" for row in rows),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def _upsert_pnl_series(row):
+    rows = _read_jsonl(LOCAL_PNL_SERIES)
+    key = row.get("date")
+    replaced = False
+    next_rows = []
+    for existing in rows:
+        if existing.get("date") == key:
+            next_rows.append(row)
+            replaced = True
+        else:
+            next_rows.append(existing)
+    if not replaced:
+        next_rows.append(row)
+    next_rows.sort(key=lambda item: item.get("date") or "")
+    _write_jsonl(LOCAL_PNL_SERIES, next_rows)
+    return next_rows
+
+
+def _build_snapshot_baseline_rows(snapshot):
+    if not snapshot or not snapshot.get("snapshot_date"):
+        return []
+    snapshot_date = snapshot["snapshot_date"]
+    snapshot_profit = snapshot["holding_profit"]
+    return [
+        {
+            "date": snapshot_date.isoformat(),
+            "kind": "snapshot_base",
+            "label": "持仓快照基准",
+            "daily_profit": None,
+            "estimated_total_profit": _money(snapshot_profit),
+            "source": "position_snapshot",
+            "note": "支付宝截图只用于同步持仓、成本和持有收益基准，不使用支付宝显示的昨日收益。",
+        },
+    ]
+
+
+def _series_with_deltas(rows):
+    ordered = sorted(rows, key=lambda item: item.get("date") or "")
+    previous_profit = None
+    result = []
+    for row in ordered:
+        item = dict(row)
+        total = _decimal(item.get("estimated_total_profit"), None)
+        explicit_daily = item.get("daily_profit")
+        if explicit_daily in (None, "") and previous_profit is not None and total is not None:
+            item["daily_profit"] = _money(total - previous_profit)
+        if total is not None:
+            previous_profit = total
+        result.append(item)
+    return result
+
+
+def _position_numbers(position, snapshot_item, market):
+    fund = position.fund
+    name = fund.fund_name
+    fund_type = fund.fund_type
+    bucket = _fund_bucket(name, fund_type)
+    share = _decimal(position.holding_share)
+    cost = _decimal(position.holding_cost)
+    latest_nav = _decimal(fund.latest_nav)
+    estimate_nav = _decimal(fund.estimate_nav)
+    estimate_growth = _decimal(fund.estimate_growth, None) if fund.estimate_growth is not None else None
+    holding_value = share * latest_nav if latest_nav else Decimal("0")
+    current_profit = holding_value - cost
+    estimate_delta = (
+        (estimate_nav - latest_nav) * share
+        if share and latest_nav and estimate_nav
+        else Decimal("0")
+    )
+    growth_delta = (
+        latest_nav * share * estimate_growth / Decimal("100")
+        if share and latest_nav and estimate_growth is not None
+        else Decimal("0")
+    )
+    snapshot_profit = _decimal((snapshot_item or {}).get("holding_profit"))
+    settled_delta = current_profit - snapshot_profit if snapshot_item else Decimal("0")
+    estimate_time = _local_datetime(fund.estimate_time)
+    today_live_delta = growth_delta if estimate_growth is not None else estimate_delta
+
+    return {
+        "fund_code": fund.fund_code,
+        "fund_name": name,
+        "fund_type": fund_type,
+        "bucket": bucket,
+        "holding_share": str(position.holding_share),
+        "holding_cost": _money(cost),
+        "holding_value": _money(holding_value),
+        "current_holding_profit": _money(current_profit),
+        "snapshot_holding_profit": _money(snapshot_profit),
+        "settled_delta_since_snapshot": _money(settled_delta),
+        "estimate_delta": _money(estimate_delta),
+        "growth_delta_reference": _money(growth_delta),
+        "today_live_delta": _money(today_live_delta),
+        "estimated_delta_since_snapshot": _money(settled_delta + estimate_delta),
+        "latest_nav": str(fund.latest_nav or ""),
+        "latest_nav_date": fund.latest_nav_date.isoformat() if fund.latest_nav_date else None,
+        "estimate_nav": str(fund.estimate_nav or ""),
+        "estimate_growth_percent": str(fund.estimate_growth or ""),
+        "estimate_time": estimate_time.isoformat() if estimate_time else None,
+    }
 
 
 def _ensure_meta_table():
@@ -381,7 +715,7 @@ def estimate_source_summary():
     apply_patch_once()
     from api.models import Position
 
-    positions = list(Position.objects.select_related("fund").all())
+    positions = list(Position.objects.select_related("fund", "account").all())
     meta = _read_meta([p.fund.fund_code for p in positions])
     counts = {}
     fallback_count = 0
@@ -414,6 +748,188 @@ def estimate_source_summary():
     }
 
 
+def pnl_summary():
+    apply_patch_once()
+    from api.models import Account, Position
+
+    now = _local_now()
+    market = _market_clock(now)
+    snapshot = _load_latest_alipay_snapshot()
+    account = Account.objects.filter(name=ACCOUNT_NAME).first()
+    if not account:
+        account = Account.objects.filter(parent__isnull=False).first()
+    if not account:
+        return {"error": "account not found"}
+
+    positions = list(
+        Position.objects.select_related("fund", "account")
+        .filter(account=account)
+        .order_by("fund__fund_code")
+    )
+    meta = _read_meta([p.fund.fund_code for p in positions])
+    snapshot_by_code = snapshot["by_code"] if snapshot else {}
+    market_dates = {
+        "date": date.fromisoformat(market["date"]),
+        "profit_date": date.fromisoformat(market["day_stage"]["profit_date"]),
+    }
+    items = []
+    for position in positions:
+        item = _position_numbers(
+            position,
+            snapshot_by_code.get(position.fund.fund_code),
+            {
+                **market,
+                "date": market_dates["date"],
+            },
+        )
+        item_meta = meta.get(position.fund.fund_code, {})
+        source_name = item_meta.get("estimate_source")
+        item.update(
+            {
+                "estimate_source": source_name,
+                "estimate_source_label": _source_label(source_name),
+                "requested_source": item_meta.get("requested_source"),
+                "is_fallback": bool(item_meta.get("is_fallback")),
+            }
+        )
+        items.append(item)
+
+    current_holding_profit = sum(_decimal(item["current_holding_profit"]) for item in items)
+    current_holding_value = sum(_decimal(item["holding_value"]) for item in items)
+    current_holding_cost = sum(_decimal(item["holding_cost"]) for item in items)
+    settled_delta = sum(_decimal(item["settled_delta_since_snapshot"]) for item in items)
+    estimate_delta = sum(_decimal(item["estimate_delta"]) for item in items)
+    today_live_delta = sum(_decimal(item["today_live_delta"]) for item in items)
+    qdii_live_reference = sum(
+        _decimal(item["today_live_delta"]) for item in items if item["bucket"] == "qdii"
+    )
+    domestic_live_delta = sum(
+        _decimal(item["today_live_delta"]) for item in items if item["bucket"] != "qdii"
+    )
+    estimate_total_profit = current_holding_profit + estimate_delta
+    snapshot_profit = snapshot["holding_profit"] if snapshot else Decimal("0")
+    estimated_delta_since_snapshot = estimate_total_profit - snapshot_profit
+
+    nav_counts = {}
+    for item in items:
+        key = item["latest_nav_date"] or "未知"
+        nav_counts[key] = nav_counts.get(key, 0) + 1
+    source_counts = {}
+    fallback_count = 0
+    for item in items:
+        label = item.get("estimate_source_label") or item.get("estimate_source") or "未知"
+        source_counts[label] = source_counts.get(label, 0) + 1
+        if item.get("is_fallback"):
+            fallback_count += 1
+
+    snapshot_date = snapshot["snapshot_date"] if snapshot else None
+    profit_date = market_dates["profit_date"]
+    settlement_complete = all(
+        (_date_or_none(item["latest_nav_date"]) or date.min) >= profit_date
+        for item in items
+        if item["bucket"] != "qdii"
+    )
+    if market["day_stage"]["stage"] == "settling":
+        settlement_label = "结算中，跟随养基宝实时变化，23:59 归档为当日收益"
+    else:
+        settlement_label = "穿透中，跟随养基宝实时变化"
+
+    items.sort(
+        key=lambda item: abs(_decimal(item["estimated_delta_since_snapshot"])),
+        reverse=True,
+    )
+
+    baseline_rows = _build_snapshot_baseline_rows(snapshot)
+    current_series_row = {
+        "date": profit_date.isoformat(),
+        "kind": "yangjibao_estimated_day",
+        "label": f"养基宝估算当日收益（{market['day_stage']['label']}）",
+        "daily_profit": _money(today_live_delta),
+        "estimated_total_profit": _money(estimate_total_profit),
+        "settled_delta": _money(settled_delta),
+        "unsettled_estimate_delta": _money(estimate_delta),
+        "baseline_delta_since_snapshot": _money(estimated_delta_since_snapshot),
+        "source": "yangjibao_plus_nav",
+        "generated_at": now.isoformat(),
+        "stage": market["day_stage"]["stage"],
+        "note": "按北京时间自然日、当前持仓和养基宝/净值变化计算；23:59 作为当日收益归档点。",
+    }
+    series_rows = _read_jsonl(LOCAL_PNL_SERIES)
+    if not series_rows:
+        series_rows = baseline_rows
+        _write_jsonl(LOCAL_PNL_SERIES, series_rows)
+    series_rows = _upsert_pnl_series(current_series_row)
+    series_rows = _series_with_deltas(series_rows)
+
+    daily_pnl = {
+        "date": profit_date.isoformat(),
+        "daily_profit": _money(today_live_delta),
+        "domestic_delta": _money(domestic_live_delta),
+        "qdii_delta_reference": _money(qdii_live_reference),
+        "stage": market["day_stage"]["stage"],
+        "stage_label": market["day_stage"]["label"],
+        "range_label": market["day_stage"].get("range_label"),
+        "archive_time": market["day_stage"].get("archive_time"),
+        "settlement_label": settlement_label,
+        "settlement_complete": settlement_complete,
+        "note": "北京时间自然日收益；凌晨美股和白天 A 股都归入当天，刷新时跟随养基宝实时重算，23:59 固化为当日收益。",
+    }
+
+    return {
+        "generated_at": now.isoformat(),
+        "account_name": account.name,
+        "position_count": len(items),
+        "market_clock": market,
+        "latest_alipay_snapshot": {
+            "path": snapshot["path"] if snapshot else None,
+            "snapshot_date": snapshot_date.isoformat() if snapshot_date else None,
+            "holding_profit": _money(snapshot_profit),
+            "holding_value": _money(snapshot["holding_value"] if snapshot else Decimal("0")),
+            "usage": "position_snapshot_only",
+        },
+        "last_closed_trade": {
+            "date": profit_date.isoformat(),
+            "daily_profit": _money(today_live_delta),
+            "settled_delta": _money(settled_delta),
+            "unsettled_estimate_delta": _money(estimate_delta),
+            "baseline_delta_since_snapshot": _money(estimated_delta_since_snapshot),
+            "snapshot_base_profit": _money(snapshot_profit),
+            "current_estimated_total_profit": _money(estimate_total_profit),
+            "settlement_complete": settlement_complete,
+            "settlement_label": settlement_label,
+        },
+        "daily_pnl": daily_pnl,
+        "today_live": {
+            "date": market["date"],
+            "estimated_profit": _money(today_live_delta),
+            "domestic_delta": _money(domestic_live_delta),
+            "qdii_delta_reference": _money(qdii_live_reference),
+            "label": f"{market['day_stage']['label']} / 跟随养基宝实时变化",
+        },
+        "current_portfolio": {
+            "holding_cost": _money(current_holding_cost),
+            "holding_value": _money(current_holding_value),
+            "holding_profit": _money(current_holding_profit),
+            "holding_profit_rate_percent": _ratio_percent(
+                current_holding_profit / current_holding_cost
+                if current_holding_cost
+                else Decimal("0")
+            ),
+            "estimate_total_profit": _money(estimate_total_profit),
+            "estimate_total_value": _money(current_holding_cost + estimate_total_profit),
+        },
+        "quality": {
+            "nav_date_counts": nav_counts,
+            "estimate_source_counts": source_counts,
+            "fallback_count": fallback_count,
+            "has_snapshot": bool(snapshot),
+            "pnl_series_path": str(LOCAL_PNL_SERIES),
+        },
+        "pnl_series": series_rows[-10:],
+        "positions": items,
+    }
+
+
 class LocalEstimatePatchMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
@@ -422,4 +938,6 @@ class LocalEstimatePatchMiddleware:
     def __call__(self, request):
         if request.path == "/api/local/estimate-sources/":
             return JsonResponse(estimate_source_summary(), json_dumps_params={"ensure_ascii": False})
+        if request.path == "/api/local/pnl-summary/":
+            return JsonResponse(pnl_summary(), json_dumps_params={"ensure_ascii": False})
         return self.get_response(request)

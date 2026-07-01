@@ -98,6 +98,67 @@ docker compose ps
 http://localhost:21345/dashboard/positions
 ```
 
+## 持仓页收益日历口径
+
+打开持仓页即可看到顶部的“收益日历口径”卡片：
+
+```text
+http://localhost:21345/dashboard/positions
+```
+
+它会自动读取 FundVal 当前持仓、最近支付宝截图快照，并优先刷新养基宝最近估值。支付宝截图只用于同步持仓、成本和持有收益基准；看板不读取支付宝显示的昨日收益。卡片按北京时间自然日和结算状态拆开：
+
+- `当日收益`：北京时间自然日的养基宝/FundVal 估算收益，按当前持仓份额和养基宝估算涨跌计算；凌晨美股和白天 A 股都归入当天。
+- `当前阶段`：`00:00-14:59` 为穿透中，`15:00-23:59` 为结算中，期间都跟随养基宝实时变化。
+- `持仓快照`：最近一次支付宝截图日期，只表示持仓同步时间，不表示收益来源。
+- `当前持仓`：当前市值、持有收益、估值后收益。
+
+如果当天不想截图支付宝，也可以只刷新估值和 AI 导出，不改支付宝持仓快照：
+
+Windows PowerShell:
+
+```powershell
+python .\tools\export_for_ai.py --out .\exports\ai_portfolio_snapshot.json
+```
+
+macOS / Linux:
+
+```bash
+python3 ./tools/export_for_ai.py --out ./exports/ai_portfolio_snapshot.json
+```
+
+这个命令会刷新养基宝估值，并把看板同口径数据写入结构化导出：
+
+```text
+exports/ai_portfolio_snapshot.json
+```
+
+持仓页顶部卡片会显示市场阶段、净值日期分布、估值源、收益变化记录和主要贡献/拖累。北京时间 `23:59` 归档当日收益，第二天看板会把这条记录作为昨日收益参考。
+
+手动归档当前养基宝收益：
+
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\archive_local_pnl.ps1
+```
+
+macOS / Linux:
+
+```bash
+bash ./tools/archive_local_pnl.sh
+```
+
+如果要自动化，在 Windows 任务计划程序里把这个 PowerShell 命令设为每天 `23:59` 执行即可。
+
+页面中 FundVal 原生“收益趋势”图画的是账户市值/成本趋势，不是本项目计算的每日收益。每日收益记录看顶部卡片的“收益变化记录”，并保存到：
+
+```text
+history/local_pnl_series.jsonl
+```
+
+如果某天没有养基宝/净值历史快照，就不会强行显示该日收益。比如只有 2026-06-30 的持仓快照时，2026-06-29 不会用支付宝截图里的收益数字补算。
+
 ## 日常导入支付宝截图
 
 让 AI 根据 `AI_SCREENSHOT_PROMPT.md` 把截图转成 JSON，保存为：
