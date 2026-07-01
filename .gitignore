@@ -8,6 +8,8 @@ exports/*
 history/*
 !history/.gitkeep
 work/
+temp/
+temp_show.py
 *.log
 __pycache__/
 .pytest_cache/

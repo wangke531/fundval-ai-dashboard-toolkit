@@ -4,6 +4,21 @@
 
 本项目只负责记录、归档、导入和导出结构化数据。截图识别、操控流程、读取数据、总结复盘、风险提示和可选操作思路，由 Claude Code / AutoClaw / Codex 等外部 AI 工具负责。
 
+如果你想让 Claude Code、AutoClaw、Codex、QwenPaw 等 AI 工具接管这个项目，先让它读取仓库根目录的：
+
+```text
+AGENTS.md
+AI_TOOL_USAGE.md
+AI_SCREENSHOT_PROMPT.md
+REMOTE_ACCESS_CN.md
+```
+
+最短交接方式是把下面这段发给 AI：
+
+```text
+请接管这个 FundVal-Live 基金数据框架项目。先阅读 AGENTS.md、AI_TOOL_USAGE.md、AI_SCREENSHOT_PROMPT.md 和 REMOTE_ACCESS_CN.md。以后我发支付宝基金持仓截图时，你按 AI_SCREENSHOT_PROMPT.md 识别成 imports/alipay_snapshot.json，先 dry-run，确认后再正式执行 daily_update。分析时读取 exports/ai_portfolio_snapshot.json 和 history/，不要读取支付宝截图里的昨日收益，不要提交 imports、exports、history、.env 或任何真实持仓数据。
+```
+
 默认访问地址：
 
 ```text
@@ -11,6 +26,8 @@ http://localhost:21345/dashboard/positions
 ```
 
 默认只绑定 `127.0.0.1`，同一台电脑能打开，局域网和公网默认打不开。除非你主动改 `docker-compose.yml` 的端口绑定或做公网反代，否则别人看不到你的看板。
+
+如果需要手机访问，请先看 `REMOTE_ACCESS_CN.md`。国内用户不默认推荐 Tailscale；长期稳定访问更适合云服务器部署并加访问保护，临时访问可考虑 cpolar / NATAPP / frp。不要默认把看板裸露到公网，也不要把 Tailscale auth key 或内网穿透地址提交到公开仓库。
 
 ## 最终工作流
 

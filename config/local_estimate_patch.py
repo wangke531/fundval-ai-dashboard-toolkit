@@ -27,6 +27,8 @@ LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 US_TZ = ZoneInfo("America/New_York")
 MONEY = Decimal("0.01")
 LOCAL_PNL_SERIES = Path("/app/local-history/local_pnl_series.jsonl")
+LOCAL_HISTORY_DIR = Path("/app/local-history")
+LOCAL_IMPORTS_DIR = Path("/app/local-imports")
 
 LOGIN_SOURCES = {"yangjibao", "xiaobeiyangji"}
 SOURCE_LABELS = {
@@ -191,6 +193,18 @@ def _snapshot_candidates():
     return sorted(set(candidates), key=lambda path: path.stat().st_mtime, reverse=True)
 
 
+def _position_history_candidates():
+    candidates = []
+    for base in (LOCAL_HISTORY_DIR, Path("history")):
+        if base.exists():
+            candidates.extend(base.glob("*/alipay_snapshot.json"))
+    for base in (LOCAL_IMPORTS_DIR, Path("imports")):
+        path = base / "alipay_snapshot.json"
+        if path.exists():
+            candidates.append(path)
+    return sorted(set(candidates), key=lambda path: str(path))
+
+
 def _load_latest_alipay_snapshot():
     for path in _snapshot_candidates():
         try:
@@ -219,6 +233,46 @@ def _load_latest_alipay_snapshot():
                 ),
             }
     return None
+
+
+def _load_position_history(fund_code):
+    code = str(fund_code or "").zfill(6)
+    points_by_date = {}
+    fund_name = None
+    for path in _position_history_candidates():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        snapshot_date = data.get("snapshot_date")
+        if not snapshot_date and path.parent.name:
+            snapshot_date = path.parent.name
+        holdings = data.get("holdings")
+        if not snapshot_date or not isinstance(holdings, list):
+            continue
+        for item in holdings:
+            if str(item.get("fund_code") or "").zfill(6) != code:
+                continue
+            fund_name = item.get("fund_name") or fund_name
+            points_by_date[str(snapshot_date)] = {
+                "date": str(snapshot_date),
+                "source": "alipay_snapshot",
+                "snapshot_file": str(path),
+                "fund_code": code,
+                "fund_name": item.get("fund_name") or fund_name,
+                "holding_value": _money(item.get("holding_value") or item.get("market_value") or item.get("current_value") or item.get("amount")),
+                "holding_profit": _money(item.get("holding_profit") or item.get("profit") or item.get("pnl")),
+                "share": str(item.get("share") or ""),
+                "nav": str(item.get("nav") or item.get("latest_nav") or ""),
+            }
+    points = [points_by_date[key] for key in sorted(points_by_date)]
+    return {
+        "fund_code": code,
+        "fund_name": fund_name,
+        "point_count": len(points),
+        "points": points,
+        "note": "支付宝截图只用于记录持仓市值、份额和持有收益基准；折线图不读取支付宝昨日收益。",
+    }
 
 
 def _json_default(value):
@@ -337,7 +391,17 @@ def _position_numbers(position, snapshot_item, market):
     snapshot_profit = _decimal((snapshot_item or {}).get("holding_profit"))
     settled_delta = current_profit - snapshot_profit if snapshot_item else Decimal("0")
     estimate_time = _local_datetime(fund.estimate_time)
-    today_live_delta = growth_delta if estimate_growth is not None else estimate_delta
+    profit_date = market.get("profit_date") or market.get("date")
+    estimate_is_current = bool(
+        estimate_time and profit_date and estimate_time.date() >= profit_date
+    )
+    effective_estimate_delta = estimate_delta if estimate_is_current else Decimal("0")
+    effective_growth_delta = growth_delta if estimate_is_current else Decimal("0")
+    today_live_delta = (
+        effective_growth_delta
+        if estimate_growth is not None and estimate_is_current
+        else effective_estimate_delta
+    )
 
     return {
         "fund_code": fund.fund_code,
@@ -350,15 +414,18 @@ def _position_numbers(position, snapshot_item, market):
         "current_holding_profit": _money(current_profit),
         "snapshot_holding_profit": _money(snapshot_profit),
         "settled_delta_since_snapshot": _money(settled_delta),
-        "estimate_delta": _money(estimate_delta),
-        "growth_delta_reference": _money(growth_delta),
+        "estimate_delta": _money(effective_estimate_delta),
+        "growth_delta_reference": _money(effective_growth_delta),
         "today_live_delta": _money(today_live_delta),
-        "estimated_delta_since_snapshot": _money(settled_delta + estimate_delta),
+        "estimated_delta_since_snapshot": _money(
+            settled_delta + effective_estimate_delta
+        ),
         "latest_nav": str(fund.latest_nav or ""),
         "latest_nav_date": fund.latest_nav_date.isoformat() if fund.latest_nav_date else None,
         "estimate_nav": str(fund.estimate_nav or ""),
         "estimate_growth_percent": str(fund.estimate_growth or ""),
         "estimate_time": estimate_time.isoformat() if estimate_time else None,
+        "estimate_is_current": estimate_is_current,
     }
 
 
@@ -780,6 +847,7 @@ def pnl_summary():
             {
                 **market,
                 "date": market_dates["date"],
+                "profit_date": market_dates["profit_date"],
             },
         )
         item_meta = meta.get(position.fund.fund_code, {})
@@ -854,12 +922,17 @@ def pnl_summary():
         "stage": market["day_stage"]["stage"],
         "note": "按北京时间自然日、当前持仓和养基宝/净值变化计算；23:59 作为当日收益归档点。",
     }
-    series_rows = _read_jsonl(LOCAL_PNL_SERIES)
-    if not series_rows:
-        series_rows = baseline_rows
-        _write_jsonl(LOCAL_PNL_SERIES, series_rows)
-    series_rows = _upsert_pnl_series(current_series_row)
-    series_rows = _series_with_deltas(series_rows)
+    archived_series_rows = _read_jsonl(LOCAL_PNL_SERIES)
+    if not archived_series_rows and baseline_rows:
+        archived_series_rows = baseline_rows
+        _write_jsonl(LOCAL_PNL_SERIES, archived_series_rows)
+    display_series_rows = [
+        row
+        for row in archived_series_rows
+        if row.get("date") != current_series_row["date"]
+    ]
+    display_series_rows.append({**current_series_row, "transient": True})
+    series_rows = _series_with_deltas(display_series_rows)
 
     daily_pnl = {
         "date": profit_date.isoformat(),
@@ -930,6 +1003,13 @@ def pnl_summary():
     }
 
 
+def position_history(request):
+    fund_code = request.GET.get("fund_code") or request.GET.get("code")
+    if not fund_code:
+        return {"error": "fund_code is required", "points": []}
+    return _load_position_history(fund_code)
+
+
 class LocalEstimatePatchMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
@@ -940,4 +1020,6 @@ class LocalEstimatePatchMiddleware:
             return JsonResponse(estimate_source_summary(), json_dumps_params={"ensure_ascii": False})
         if request.path == "/api/local/pnl-summary/":
             return JsonResponse(pnl_summary(), json_dumps_params={"ensure_ascii": False})
+        if request.path == "/api/local/position-history/":
+            return JsonResponse(position_history(request), json_dumps_params={"ensure_ascii": False})
         return self.get_response(request)

@@ -78,6 +78,31 @@ def fetch_summary(client: FundValClient) -> dict[str, Any]:
     return client.request_json("GET", "/api/local/pnl-summary/")
 
 
+def local_pnl_series_path(summary: dict[str, Any]) -> Path:
+    raw_path = ((summary.get("quality") or {}).get("pnl_series_path") or "").replace("\\", "/")
+    if raw_path.startswith("/app/local-history/"):
+        return ROOT / "history" / raw_path.removeprefix("/app/local-history/")
+    return ROOT / "history" / "local_pnl_series.jsonl"
+
+
+def upsert_jsonl(path: Path, row: dict[str, Any]) -> None:
+    rows: list[dict[str, Any]] = []
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            item = json.loads(line)
+            if item.get("date") != row.get("date"):
+                rows.append(item)
+    rows.append(row)
+    rows.sort(key=lambda item: item.get("date") or "")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n" for item in rows),
+        encoding="utf-8",
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Archive the current local YangJiBao PnL summary."
@@ -107,6 +132,22 @@ def main() -> None:
         refresh = refresh_estimates(client, args.account, args.estimate_source)
     summary = fetch_summary(client)
     daily_pnl = summary.get("daily_pnl") or {}
+    archive_row = {
+        "date": daily_pnl.get("date"),
+        "kind": "yangjibao_estimated_day",
+        "label": f"养基宝估算当日收益（{daily_pnl.get('stage_label') or ''}）",
+        "daily_profit": daily_pnl.get("daily_profit") or (summary.get("last_closed_trade") or {}).get("daily_profit"),
+        "estimated_total_profit": (summary.get("current_portfolio") or {}).get("estimate_total_profit"),
+        "settled_delta": (summary.get("last_closed_trade") or {}).get("settled_delta"),
+        "unsettled_estimate_delta": (summary.get("last_closed_trade") or {}).get("unsettled_estimate_delta"),
+        "baseline_delta_since_snapshot": (summary.get("last_closed_trade") or {}).get("baseline_delta_since_snapshot"),
+        "source": "yangjibao_plus_nav",
+        "generated_at": summary.get("generated_at"),
+        "stage": daily_pnl.get("stage"),
+        "note": "按北京时间自然日、当前持仓和养基宝/净值变化计算；23:59 作为当日收益归档点。",
+    }
+    if archive_row.get("date"):
+        upsert_jsonl(local_pnl_series_path(summary), archive_row)
     payload = {
         "generated_at": summary.get("generated_at"),
         "refreshed": refresh,
@@ -116,6 +157,7 @@ def main() -> None:
         "daily_pnl": daily_pnl,
         "today_live": summary.get("today_live"),
         "pnl_series_path": (summary.get("quality") or {}).get("pnl_series_path"),
+        "archived_row": archive_row,
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 

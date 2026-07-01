@@ -114,6 +114,7 @@ services:
       - ./config/no-login.js:/usr/share/nginx/html/no-login.template.js:ro
       - ./config/local-source-badge.js:/usr/share/nginx/html/local-source-badge.js:ro
       - ./config/local-pnl-summary.js:/usr/share/nginx/html/local-pnl-summary.js:ro
+      - ./config/local-position-history.js:/usr/share/nginx/html/local-position-history.js:ro
 
 volumes:
   postgres_data:

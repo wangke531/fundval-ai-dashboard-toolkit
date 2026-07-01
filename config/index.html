@@ -5,13 +5,31 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>FundVal-Live 基金看板</title>
-    <script defer src="/no-login.js"></script>
-    <script defer src="/local-source-badge.js"></script>
-    <script defer src="/local-pnl-summary.js"></script>
+    <script defer src="/no-login.js?v=20260701-2"></script>
+    <script defer src="/local-source-badge.js?v=20260701-2"></script>
+    <script defer src="/local-pnl-summary.js?v=20260702-6"></script>
+    <script defer src="/local-position-history.js?v=20260702-6"></script>
     <script type="module" crossorigin src="/assets/index-FYDCBVXL.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-BwZ3_zuU.css">
   </head>
   <body>
     <div id="root"></div>
+    <script>
+    // 隐藏"操作流水"模块
+    (function() {
+      const hideOps = () => {
+        document.querySelectorAll('.ant-card-head-title').forEach(el => {
+          if (el.textContent.includes('操作流水')) {
+            const card = el.closest('.ant-card');
+            if (card) card.style.display = 'none';
+          }
+        });
+      };
+      // DOM 变化监听，确保 React 渲染后也能隐藏
+      const observer = new MutationObserver(() => hideOps());
+      observer.observe(document.body, { childList: true, subtree: true });
+      hideOps();
+    })();
+    </script>
   </body>
 </html>
