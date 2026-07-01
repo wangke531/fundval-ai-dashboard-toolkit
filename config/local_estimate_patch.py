@@ -57,6 +57,15 @@ def _money(value):
     return str(_decimal(value).quantize(MONEY))
 
 
+def _plain_decimal(value):
+    if value is None:
+        return ""
+    text = format(value, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
+
+
 def _ratio_percent(value):
     dec = _decimal(value)
     return str((dec * Decimal("100")).quantize(MONEY))
@@ -254,18 +263,80 @@ def _load_position_history(fund_code):
             if str(item.get("fund_code") or "").zfill(6) != code:
                 continue
             fund_name = item.get("fund_name") or fund_name
+            holding_value = _decimal(
+                item.get("holding_value")
+                or item.get("market_value")
+                or item.get("current_value")
+                or item.get("amount"),
+                default=None,
+            )
+            holding_profit = _decimal(
+                item.get("holding_profit") or item.get("profit") or item.get("pnl"),
+                default=None,
+            )
+            share = _decimal(item.get("share"), default=None)
+            nav = _decimal(item.get("nav") or item.get("latest_nav"), default=None)
             points_by_date[str(snapshot_date)] = {
                 "date": str(snapshot_date),
                 "source": "alipay_snapshot",
                 "snapshot_file": str(path),
                 "fund_code": code,
                 "fund_name": item.get("fund_name") or fund_name,
-                "holding_value": _money(item.get("holding_value") or item.get("market_value") or item.get("current_value") or item.get("amount")),
-                "holding_profit": _money(item.get("holding_profit") or item.get("profit") or item.get("pnl")),
-                "share": str(item.get("share") or ""),
-                "nav": str(item.get("nav") or item.get("latest_nav") or ""),
+                "holding_value": _money(holding_value) if holding_value is not None else "",
+                "holding_profit": _money(holding_profit) if holding_profit is not None else "",
+                "share": _plain_decimal(share) if share is not None else str(item.get("share") or ""),
+                "nav": _plain_decimal(nav) if nav is not None else str(item.get("nav") or item.get("latest_nav") or ""),
+                "_holding_value_decimal": holding_value,
+                "_holding_profit_decimal": holding_profit,
+                "_share_decimal": share,
+                "_nav_decimal": nav,
             }
     points = [points_by_date[key] for key in sorted(points_by_date)]
+    previous = None
+    for point in points:
+        if previous is None:
+            point["change_label"] = "首次记录"
+            point["share_delta"] = ""
+            point["holding_value_delta"] = ""
+            point["holding_profit_delta"] = ""
+            point["nav_delta"] = ""
+        else:
+            share = point.get("_share_decimal")
+            previous_share = previous.get("_share_decimal")
+            if share is not None and previous_share is not None:
+                share_delta = share - previous_share
+                point["share_delta"] = _plain_decimal(share_delta)
+                if share_delta > 0:
+                    point["change_label"] = "加仓"
+                elif share_delta < 0:
+                    point["change_label"] = "减仓"
+                else:
+                    point["change_label"] = "份额不变"
+            else:
+                point["share_delta"] = ""
+                point["change_label"] = "份额缺失"
+
+            holding_value = point.get("_holding_value_decimal")
+            previous_holding_value = previous.get("_holding_value_decimal")
+            if holding_value is not None and previous_holding_value is not None:
+                point["holding_value_delta"] = _money(holding_value - previous_holding_value)
+            else:
+                point["holding_value_delta"] = ""
+
+            holding_profit = point.get("_holding_profit_decimal")
+            previous_holding_profit = previous.get("_holding_profit_decimal")
+            if holding_profit is not None and previous_holding_profit is not None:
+                point["holding_profit_delta"] = _money(holding_profit - previous_holding_profit)
+            else:
+                point["holding_profit_delta"] = ""
+
+            nav = point.get("_nav_decimal")
+            previous_nav = previous.get("_nav_decimal")
+            point["nav_delta"] = _plain_decimal(nav - previous_nav) if nav is not None and previous_nav is not None else ""
+
+        previous = point
+        for key in ("_holding_value_decimal", "_holding_profit_decimal", "_share_decimal", "_nav_decimal"):
+            point.pop(key, None)
     return {
         "fund_code": code,
         "fund_name": fund_name,

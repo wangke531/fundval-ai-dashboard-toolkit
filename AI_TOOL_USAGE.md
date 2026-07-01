@@ -136,6 +136,16 @@ history/daily_index.jsonl
 
 `history/daily_index.jsonl` 是长期记录入口，一个月、两个月复盘都优先读它。数据框架只负责生成这些文件，分析逻辑由 AI 工具完成。
 
+单只基金的持仓份额变化入口：
+
+```text
+http://localhost:21345/dashboard/funds/<fund_code>
+http://localhost:21345/dashboard/positions  # 持仓列表里点“持仓变化”
+/api/local/position-history/?fund_code=<fund_code>
+```
+
+`/api/local/position-history/` 从 `history/YYYY-MM-DD/alipay_snapshot.json` 和当前 `imports/alipay_snapshot.json` 读取该基金的每日快照，返回 `share`、`share_delta`、`holding_value_delta`、`holding_profit_delta` 和 `change_label`。AI 分析加仓/减仓时优先读这个接口或对应历史快照，不要从支付宝昨日收益反推。
+
 如果用户没有发支付宝截图，但想看估值盈亏，主入口是 `http://localhost:21345/dashboard/positions` 顶部的“收益日历口径”卡片。AI 可以运行 `tools/export_for_ai.py` 刷新养基宝估值并更新 `exports/ai_portfolio_snapshot.json`；如果要固化当天收益，运行 `tools/archive_local_pnl.py` 或对应平台脚本写入 `history/local_pnl_series.jsonl`。
 
 持仓页顶部卡片的口径：
